@@ -168,12 +168,12 @@ class SingleStepInversionAnalyzer:
 
         single_step_inversion_results = {}
 
-        intermediate_latents = {}
-        intermediate_scores = {}
+        latents = {}
+        scores = {}
         
         def callback(log):
-            intermediate_latents[log['t']] = log['latent'].cpu()
-            intermediate_scores[log['t']] = log['score'].cpu()
+            latents[log['t']] = log['latent'].cpu()
+            scores[log['t']] = log['score'].cpu()
 
         for i, t in enumerate(timesteps):
             if t == 0.0:
@@ -195,8 +195,8 @@ class SingleStepInversionAnalyzer:
                 callback=callback
             )
             
-        single_step_inversion_results['intermediate_latents'] = intermediate_latents
-        single_step_inversion_results['intermediate_scores'] = intermediate_scores
+        single_step_inversion_results['intermediate_latents'] = latents
+        single_step_inversion_results['intermediate_scores'] = scores
 
         return single_step_inversion_results
     
@@ -217,8 +217,6 @@ class SingleStepInversionAnalyzer:
         for t in common_timesteps:
             model_score = model_run_scores[t]
             single_step_score = single_step_scores[t]
-            # score direction must be flipped to match model score.
-            single_step_score = -single_step_score
             
             # Ensure both scores are on the same device
             device = model_score.device if model_score.device != torch.device('cpu') else single_step_score.device
@@ -288,7 +286,9 @@ class SingleStepInversionAnalyzer:
         diff_dict = {}
         directional_diff_dict = {}
 
-        timesteps = sorted(list(single_step_results.keys()), reverse=True)
+        single_step_latents = single_step_results['intermediate_latents']
+
+        timesteps = sorted(list(single_step_latents.keys()), reverse=True)
 
         for i, k in enumerate(timesteps):
             if i == len(timesteps) - 1:
@@ -296,7 +296,7 @@ class SingleStepInversionAnalyzer:
             else:
                 next_ts = timesteps[i+1]
             dt = k - next_ts
-            l2_diff = torch.norm(single_step_results[k].to(device) - gt_latents[k].to(device), p=2)
+            l2_diff = torch.norm(single_step_latents[k].to(device) - gt_latents[k].to(device), p=2)
             diff_dict[k] = l2_diff.item()  # Convert to Python float for JSON serialization
             directional_diff_dict[k] = l2_diff.item() / dt
             print(f"L2 diff at {k}: {l2_diff}")
@@ -481,7 +481,7 @@ def main():
     
     # Render single step inversion results
     print(f"\n🎨 Starting rendering of inversion single step results...")
-    render_dir = analyzer.render_single_step_results(single_step_results, models, metadata, output_dir)
+    render_dir = analyzer.render_single_step_results(single_step_results['intermediate_latents'], models, metadata, output_dir)
 
     print(f"\n🎨 Starting rendering of forward latent results...")
     forward_dir = analyzer.render_single_step_results(model_run_data['gt_latents'], models, metadata, output_dir, child_dir_name="forward_latent_renderings")
