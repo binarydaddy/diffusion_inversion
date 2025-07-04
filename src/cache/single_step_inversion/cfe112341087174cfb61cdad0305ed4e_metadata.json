@@ -1,0 +1,12 @@
+{
+  "cache_key": "cfe112341087174cfb61cdad0305ed4e",
+  "seed": 2,
+  "source_prompt": "A cat holding hello world sign.",
+  "target_prompt": "A cat holding hello world sign.",
+  "guidance": 1,
+  "num_steps": 30,
+  "order": 1,
+  "path_to_image": "/home/swhong/workspace/RF-Solver-Edit/FLUX_Image_Edit/src/examples/source/cat.png",
+  "output_dir": "examples/edit-result/cat_single_step_inversion_error_test_cached",
+  "timestamp": 0
+}
