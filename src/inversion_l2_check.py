@@ -200,6 +200,86 @@ class SingleStepInversionAnalyzer:
 
         return single_step_inversion_results
     
+    def analyze_score_differences(self, model_run_scores, single_step_scores, output_dir):
+        """Analyze score differences and create plots."""
+        
+        import torch.nn.functional as F
+        import matplotlib.pyplot as plt
+        
+        cosine_sim_dict = {}
+        
+        # Find common timesteps between both score dictionaries
+        common_timesteps = set(model_run_scores.keys()) & set(single_step_scores.keys())
+        common_timesteps = sorted(list(common_timesteps), reverse=True)
+        
+        print(f"Computing cosine similarity for {len(common_timesteps)} common timesteps...")
+        
+        for t in common_timesteps:
+            model_score = model_run_scores[t]
+            single_step_score = single_step_scores[t]
+            # score direction must be flipped to match model score.
+            single_step_score = -single_step_score
+            
+            # Ensure both scores are on the same device
+            device = model_score.device if model_score.device != torch.device('cpu') else single_step_score.device
+            model_score = model_score.to(device)
+            single_step_score = single_step_score.to(device)
+            
+            # Flatten the tensors for cosine similarity computation
+            model_score_flat = model_score.flatten()
+            single_step_score_flat = single_step_score.flatten()
+            
+            # Compute cosine similarity
+            cosine_sim = F.cosine_similarity(
+                model_score_flat.unsqueeze(0), 
+                single_step_score_flat.unsqueeze(0), 
+                dim=1
+            ).item()
+            
+            cosine_sim_dict[t] = cosine_sim
+            print(f"Cosine similarity at t={t}: {cosine_sim:.6f}")
+        
+        # Create cosine similarity plot
+        self._plot_cosine_similarity_scatter(cosine_sim_dict, output_dir)
+        
+        return cosine_sim_dict
+    
+    def _plot_cosine_similarity_scatter(self, cosine_sim_dict, output_dir, plotname="cosine_similarity_scatter_plot"):
+        """Create a scatter plot of cosine similarity values."""
+        import matplotlib.pyplot as plt
+        
+        # Prepare data for plotting
+        timesteps = list(cosine_sim_dict.keys())
+        cosine_sims = list(cosine_sim_dict.values())
+        
+        # Create the plot
+        plt.figure(figsize=(10, 6))
+        plt.scatter(timesteps, cosine_sims, alpha=0.7, s=50)
+        plt.xlabel('Timestep')
+        plt.ylabel('Cosine Similarity')
+        plt.title('Cosine Similarity between Model Run Scores and Single Step Scores')
+        plt.grid(True, alpha=0.3)
+        plt.xlim(0, max(timesteps) * 1.1)
+        plt.ylim(min(cosine_sims) * 0.9, max(cosine_sims) * 1.1)
+        
+        # Add horizontal line at cosine similarity = 1 (perfect similarity)
+        plt.axhline(y=1.0, color='red', linestyle='--', alpha=0.5, label='Perfect Similarity')
+        plt.legend()
+        
+        # Save the plot
+        plot_path = os.path.join(output_dir, f'{plotname}.png')
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✅ Cosine similarity plot saved to: {plot_path}")
+        
+        # Print summary statistics
+        print(f"\n📊 Cosine Similarity Summary:")
+        print(f"   Mean: {sum(cosine_sims) / len(cosine_sims):.6f}")
+        print(f"   Min:  {min(cosine_sims):.6f}")
+        print(f"   Max:  {max(cosine_sims):.6f}")
+        print(f"   Std:  {(sum([(x - sum(cosine_sims) / len(cosine_sims))**2 for x in cosine_sims]) / len(cosine_sims))**0.5:.6f}")
+    
     def analyze_l2_differences(self, model_run_data, single_step_results, output_dir, device='cpu'):
         """Analyze L2 differences and create plots."""
         
@@ -391,9 +471,12 @@ def main():
     # Analyze L2 differences
     output_dir = metadata.get('output_dir', 'examples/edit-result/cat_single_step_inversion_error_test_cached')
     diff_dict = analyzer.analyze_l2_differences(model_run_data, single_step_results, output_dir)
+
+    score_diff_dict = analyzer.analyze_score_differences(single_step_results['intermediate_scores'], model_run_data['intermediate_scores'], output_dir)
     
     print(f"\n✅ L2 Analysis complete!")
     print(f"📊 L2 differences computed for {len(diff_dict)} timesteps")
+    print(f"📊 Score differences computed for {len(score_diff_dict)} timesteps")
     print(f"📁 Results saved to: {output_dir}")
     
     # Render single step inversion results
