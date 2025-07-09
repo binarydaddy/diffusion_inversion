@@ -9,7 +9,7 @@ from .model import Flux
 from .modules.conditioner import HFEmbedder
 
 
-def prepare(t5: HFEmbedder, clip: HFEmbedder, img: Tensor, prompt: str | list[str]) -> dict[str, Tensor]:
+def prepare(t5: HFEmbedder, clip: HFEmbedder, prompt: str | list[str]) -> dict[str, Tensor]:
     bs, c, h, w = img.shape
     if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)

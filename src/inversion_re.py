@@ -615,7 +615,7 @@ def analyze_multi_step_denoising(pt_file_path, device="cuda"):
     return psnr_results
 
 @torch.inference_mode()
-def run_model(image, latent, device, name, source_prompt, target_prompt, guidance, output_dir, order, num_steps, offload, models=None, width=1024, height=1024, seed=None, feature_path="feature", inject_step=0, output_filename="generated_from_latent.png"):
+def run_model(device, name="flux-dev", source_prompt="", target_prompt="", guidance=3.5, output_dir="", order=2, num_steps=25, offload=False, latent=None, models=None, width=1024, height=1024, seed=None, feature_path="feature", inject_step=0, output_filename="generated_from_latent.png"):
     """
     Run forward denoising starting from a given latent.
     
@@ -650,9 +650,6 @@ def run_model(image, latent, device, name, source_prompt, target_prompt, guidanc
     model = models['model']
     ae = models['ae']
     torch_device = models['torch_device']
-
-    # Move latent to device
-    latent = latent.to(device)
     
     # Create sampling options
     opts = SamplingOptions(
@@ -690,6 +687,11 @@ def run_model(image, latent, device, name, source_prompt, target_prompt, guidanc
         ae = ae.cuda()
 
     init_image = encode(init_image, torch_device, ae)
+
+    if latent is not None:
+        latent = latent.to(device)
+    else:
+        latent = torch.randn_like(init_image)
     
     if offload:
         ae = ae.cpu()
@@ -707,8 +709,6 @@ def run_model(image, latent, device, name, source_prompt, target_prompt, guidanc
         os.makedirs(feature_path, exist_ok=True)
 
     inp = prepare(t5, clip, init_image, prompt=target_prompt)
-
-    print(f"latent.shape: {latent.shape}")
     
     # Replace the dummy image with our actual latent
     inp["img"] = latent
@@ -787,6 +787,8 @@ def run_model(image, latent, device, name, source_prompt, target_prompt, guidanc
         'timesteps': timesteps,
         'inputs': inp,
     }    
+
+
 
 
 def compare_denoising_strategies(pt_file_path, device="cuda"):

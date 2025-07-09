@@ -16,6 +16,6 @@ CUDA_VISIBLE_DEVICES=0 python inversion.py  --source_prompt "a female humanoid c
                                         --num_steps 30 --offload \
                                         --inject 0 \
                                         --name 'flux-dev' \
-                                        --output_dir 'examples/edit-result/0025_아홉 꼬리 블로나' \
+                                        --output_dir 'examples/edit-result/test_robot' \
                                         --order 2 \
-                                        --run_mode 'inversion'
+                                        --run_mode 'multi_analysis'
