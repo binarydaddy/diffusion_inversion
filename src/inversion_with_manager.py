@@ -66,10 +66,10 @@ def run_inversion_with_manager(args):
     
     # Prepare data in the format expected by the original analysis functions
     diffusion_data = {
-        'inversion_latents': inversion_data['latents'],
-        'inversion_scores': inversion_data['scores'],
-        'forward_latents': generation_result.intermediate_latents,
-        'forward_scores': generation_result.intermediate_scores,
+        'inversion_intermediate_latents': inversion_data['intermediate_latents'],
+        'inversion_intermediate_scores': inversion_data['intermediate_scores'],
+        'forward_intermediate_latents': generation_result.intermediate_latents,
+        'forward_intermediate_scores': generation_result.intermediate_scores,
         'final_latent': generation_result.final_latent,
         'inverted_latent': inverted_latent.cpu(),
         'timesteps': inversion_data['timesteps'],

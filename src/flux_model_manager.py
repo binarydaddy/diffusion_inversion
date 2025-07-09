@@ -29,7 +29,7 @@ class FluxModelManager:
     Handles model loading, image inversion, and generation with intermediate data collection.
     """
     
-    def __init__(self, name: str = "flux-dev", device: str = "cuda", offload: bool = False):
+    def __init__(self, name: str = "flux-dev", device: str = "cuda", offload: bool = False, model_backend: str = "blackforest"):
         """
         Initialize the model manager with specified configuration.
         
@@ -48,6 +48,7 @@ class FluxModelManager:
         self.offload = offload
         
         # Initialize all models
+        self.model_backend = model_backend
         self._initialize_models()
     
     def _initialize_models(self):
@@ -63,7 +64,8 @@ class FluxModelManager:
         
         # Initialize main diffusion model
         print("Loading diffusion model...")
-        self.model = load_flow_model(self.name, device="cpu" if self.offload else self.torch_device)
+
+        self.model = load_flow_model(self.name, device="cpu" if self.offload else self.torch_device, model_backend=self.model_backend)
         
         # Initialize autoencoder
         print("Loading autoencoder...")
@@ -141,7 +143,17 @@ class FluxModelManager:
         
         return img
     
-    def _prepare_inputs(self, prompt: str, image: Optional[torch.Tensor] = None) -> Dict[str, Any]:
+    def _prepare_empty_latent(self, height: int, width: int, device='cuda', dtype=torch.bfloat16) -> torch.Tensor:
+        """
+        Prepare an empty latent tensor for generation.
+        """
+        latent_h = height // 8
+        latent_w = width // 8
+        latent_channels = 16  # Flux uses 16 latent channels
+        return torch.randn(1, latent_channels, latent_h, latent_w, device=device, dtype=dtype)
+
+
+    def _prepare_inputs(self, prompt: str, latent: Optional[torch.Tensor] = None) -> Dict[str, Any]:
         """
         Prepare inputs for the diffusion model.
         
@@ -152,13 +164,19 @@ class FluxModelManager:
         Returns:
             Dictionary of prepared inputs
         """
+        if latent is None and latent is None:
+            raise ValueError("Either image or latent must be provided")
+        
         # Move text encoders to device if offloading
         if self.offload:
             self.t5.to(self.torch_device)
             self.clip.to(self.torch_device)
         
         # Prepare inputs
-        inp = prepare(self.t5, self.clip, image, prompt=prompt)
+        inp = prepare(self.t5, 
+                      self.clip, 
+                      img=latent, 
+                      prompt=prompt)
         
         # Move text encoders back to CPU if offloading
         if self.offload:
@@ -261,8 +279,8 @@ class FluxModelManager:
         
         # Prepare intermediate data
         intermediate_data = {
-            'latents': intermediate_latents,
-            'scores': intermediate_scores,
+            'intermediate_latents': intermediate_latents,
+            'intermediate_scores': intermediate_scores,
             'timesteps': timesteps.cpu() if hasattr(timesteps, 'cpu') else timesteps,
             'final_latent': inverted_latent.cpu(),
             'encoded_image': encoded_image.cpu(),
@@ -285,6 +303,7 @@ class FluxModelManager:
     def generate(
         self,
         prompt: str,
+        bs: int = 1,
         width: int = 1024,
         height: int = 1024,
         num_steps: int = 50,
@@ -325,19 +344,12 @@ class FluxModelManager:
         
         # Create or use starting latent
         if starting_latent is None:
-            # Calculate latent dimensions
-            latent_h = height // 8
-            latent_w = width // 8
-            latent_channels = 16  # Flux uses 16 latent channels
-            
-            # Create random latent
-            shape = (1, latent_channels * latent_h * latent_w // 4, 64)  # Flux packing format
-            starting_latent = torch.randn(shape, device=self.torch_device, dtype=torch.bfloat16)
+            starting_latent = self._prepare_empty_latent(height, width, device=self.torch_device)
         else:
             starting_latent = starting_latent.to(self.torch_device)
         
         # Prepare inputs (no image needed for generation)
-        inp = self._prepare_inputs(prompt, starting_latent)
+        inp = self._prepare_inputs(prompt, latent=starting_latent)
         
         # Get timestep schedule
         timesteps = get_schedule(num_steps, starting_latent.shape[1], shift=(self.name != "flux-schnell"))
@@ -443,6 +455,7 @@ class FluxModelManager:
         # Save intermediate data
         intermediate_data = {
             'final_latent': result.final_latent,
+            'initial_latent': result.initial_latent,
             'intermediate_latents': result.intermediate_latents,
             'intermediate_scores': result.intermediate_scores,
             'timesteps': result.timesteps,

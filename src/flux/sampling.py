@@ -9,7 +9,8 @@ from .model import Flux
 from .modules.conditioner import HFEmbedder
 
 
-def prepare(t5: HFEmbedder, clip: HFEmbedder, prompt: str | list[str]) -> dict[str, Tensor]:
+def prepare(t5: HFEmbedder, clip: HFEmbedder, prompt: str | list[str], img: Tensor) -> dict[str, Tensor]:
+    
     bs, c, h, w = img.shape
     if bs == 1 and not isinstance(prompt, str):
         bs = len(prompt)
@@ -17,7 +18,7 @@ def prepare(t5: HFEmbedder, clip: HFEmbedder, prompt: str | list[str]) -> dict[s
     img = rearrange(img, "b c (h ph) (w pw) -> b (h w) (c ph pw)", ph=2, pw=2)
     if img.shape[0] == 1 and bs > 1:
         img = repeat(img, "1 ... -> bs ...", bs=bs)
-
+        
     img_ids = torch.zeros(h // 2, w // 2, 3)
     img_ids[..., 1] = img_ids[..., 1] + torch.arange(h // 2)[:, None]
     img_ids[..., 2] = img_ids[..., 2] + torch.arange(w // 2)[None, :]
