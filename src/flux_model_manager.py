@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, Tuple
 import json
 from einops import rearrange
 
-from flux.sampling import denoise, get_schedule, prepare, unpack
+from flux.sampling import denoise, get_schedule, prepare, unpack, denoise_starting_particular_step
 from flux.util import load_ae, load_clip, load_flow_model, load_t5, configs
 
 
@@ -199,17 +199,21 @@ class FluxModelManager:
         return inp
     
     @torch.inference_mode()
-    def invert_image(
+    def invert(
         self,
-        image_path: str,
-        source_prompt: str,
+        image_path: Optional[str] = None,
+        source_prompt: str = "",
+        width: int = 1024,
+        height: int = 1024,
         num_steps: int = 50,
         guidance: float = 3.5,
         seed: Optional[int] = None,
         order: int = 2,
         save_intermediates: bool = True,
         feature_path: str = "feature",
-        inject_step: int = 0
+        inject_step: int = 0,
+        start_latent: Optional[torch.Tensor] = None,
+        start_timestep: int = None
     ) -> InversionResult:
         """
         Perform DDIM inversion on an image.
@@ -229,18 +233,30 @@ class FluxModelManager:
             Tuple of (inverted_latent, intermediate_data_dict)
         """
         # Load and preprocess image
-        image = Image.open(image_path).convert('RGB')
-        image_np = np.array(image)
+
+
+        if start_latent is None:
+            image = Image.open(image_path).convert('RGB')
+            image_np = np.array(image)
+            
+            # Ensure dimensions are multiples of 16
+            h, w = image_np.shape[:2]
+            new_h = h - (h % 16) if h % 16 != 0 else h
+            new_w = w - (w % 16) if w % 16 != 0 else w
+            image_np = image_np[:new_h, :new_w, :]
+            
+            # Encode image
+            encoded_image = self._encode_image(image_np)
         
-        # Ensure dimensions are multiples of 16
-        h, w = image_np.shape[:2]
-        new_h = h - (h % 16) if h % 16 != 0 else h
-        new_w = w - (w % 16) if w % 16 != 0 else w
-        image_np = image_np[:new_h, :new_w, :]
-        
-        # Encode image
-        encoded_image = self._encode_image(image_np)
-        
+        else:
+            assert start_latent is not None
+
+            new_h = height
+            new_w = width
+
+            start_latent = start_latent.to(self.torch_device)
+            start_latent = unpack(start_latent, new_w, new_h)
+            encoded_image = start_latent
         # Prepare inputs
         inp = self._prepare_inputs(source_prompt, encoded_image)
         
@@ -277,6 +293,7 @@ class FluxModelManager:
             self.model,
             **inp,
             timesteps=timesteps,
+            start_timestep=start_timestep,
             guidance=guidance,
             inverse=True,
             info=info,
@@ -334,8 +351,9 @@ class FluxModelManager:
         guidance: float = 3.5,
         seed: Optional[int] = None,
         order: int = 2,
+        start_timestep: int = None,
         save_intermediates: bool = True,
-        starting_latent: Optional[torch.Tensor] = None,
+        start_latent: Optional[torch.Tensor] = None,
         feature_path: str = "feature",
         inject_step: int = 0
     ) -> GenerationResult:
@@ -367,19 +385,19 @@ class FluxModelManager:
             torch.manual_seed(seed)
         
         # Create or use starting latent
-        if starting_latent is None:
-            starting_latent = self._prepare_empty_latent(height, width, device=self.torch_device)
+        if start_latent is None:
+            start_latent = self._prepare_empty_latent(height, width, device=self.torch_device)
         else:
-            starting_latent = starting_latent.to(self.torch_device)
+            start_latent = start_latent.to(self.torch_device)
         
-        if len(starting_latent.shape) == 3:
-            starting_latent = unpack(starting_latent, width, height)
+        if len(start_latent.shape) == 3:
+            start_latent = unpack(start_latent, width, height)
         
         # Prepare inputs (no image needed for generation)
-        inp = self._prepare_inputs(prompt, latent=starting_latent)
+        inp = self._prepare_inputs(prompt, latent=start_latent)
         
         # Get timestep schedule
-        timesteps = get_schedule(num_steps, starting_latent.shape[1], shift=(self.name != "flux-schnell"))
+        timesteps = get_schedule(num_steps, start_latent.shape[1], shift=(self.name != "flux-schnell"))
         
         # Setup info dictionary
         info = {
@@ -411,6 +429,7 @@ class FluxModelManager:
             self.model,
             **inp,
             timesteps=timesteps,
+            start_timestep=start_timestep,
             guidance=guidance,
             inverse=False,
             info=info,
@@ -430,7 +449,7 @@ class FluxModelManager:
         result = GenerationResult(
             final_image=final_image,
             final_latent=final_latent.cpu(),
-            initial_latent=starting_latent.cpu(),
+            initial_latent=start_latent.cpu(),
             intermediate_latents=intermediate_latents,
             intermediate_scores=intermediate_scores,
             timesteps=timesteps.cpu() if hasattr(timesteps, 'cpu') else timesteps,
@@ -540,3 +559,82 @@ class FluxModelManager:
                 json_metadata['timesteps'] = json_metadata['timesteps'].tolist()
             json.dump(json_metadata, f, indent=2)
         print(f"Metadata saved to: {metadata_path}")
+
+    def invert_image_starting_from_timestep(self, timestep_idx, inversion_data, prompt:str):
+        """
+            timestep_idx is the index of the timestep to start from.
+            timestep_idx = 0 means t = 0.0, and timestep_idx = 31 means t = 1.0, if num_steps = 30.
+        """
+
+        inversion_data_intermediate_latents = inversion_data.intermediate_latents
+        inversion_data_intermediate_latents_timesteps = sorted(inversion_data.timesteps)
+
+        previous_timestep = inversion_data_intermediate_latents_timesteps[timestep_idx - 1]
+        intermediate_latent = inversion_data_intermediate_latents[previous_timestep]
+
+        result = self.invert(
+            source_prompt=prompt,
+            num_steps=50,
+            guidance=3.5,
+            seed=42,
+            save_intermediates=True,
+            start_latent=intermediate_latent,
+            start_timestep=previous_timestep,
+            order=2
+        )
+
+        return result
+    
+    def generate_image_starting_from_timestep(self, timestep_idx, generation_data, prompt:str):
+        """
+            timestep_idx is the index of the timestep to start from.
+            timestep_idx = 0 means t = 0.0, and timestep_idx = 31 means t = 1.0, if num_steps = 30.
+        """
+        generation_data_intermediate_latents = generation_data.intermediate_latents
+        generation_data_intermediate_latents_timesteps = sorted(generation_data.timesteps)
+
+        current_timestep = generation_data_intermediate_latents_timesteps[timestep_idx]
+        next_timestep = generation_data_intermediate_latents_timesteps[timestep_idx + 1]
+        intermediate_latent = generation_data_intermediate_latents[next_timestep]
+
+        result = self.generate(
+            prompt=prompt,
+            width=1024,
+            height=1024,
+            num_steps=50,
+            guidance=3.5,
+            seed=42,
+            save_intermediates=True,
+            start_latent=intermediate_latent,
+            start_timestep=current_timestep,
+            order=2
+        )
+
+        return result
+    
+    def sanity_check(self, prompt:str="A cat holding a sign that says hello world."):
+        generation_result = self.generate(prompt=prompt, width=1024, height=1024, num_steps=50, guidance=3.5, seed=42, save_intermediates=True)
+
+        inversion_result = self.invert(
+            source_prompt=prompt,
+            width=1024,
+            height=1024,
+            num_steps=50,
+            guidance=3.5,
+            start_latent=generation_result.final_latent,
+        )
+
+        result_generation_from_inversion = self.generate_image_starting_from_timestep(
+            timestep_idx=30,
+            generation_data=generation_result,
+            prompt=prompt,
+        )
+
+        result_inversion_from_generation = self.invert_image_starting_from_timestep(
+            timestep_idx=30,
+            inversion_data=inversion_result,
+            prompt=prompt,
+        )
+
+        print(f"Inversion test passed: {torch.allclose(inversion_result.final_latent, result_inversion_from_generation.final_latent)}")
+        print(f"Generation test passed: {torch.allclose(generation_result.final_latent, result_generation_from_inversion.final_latent)}")

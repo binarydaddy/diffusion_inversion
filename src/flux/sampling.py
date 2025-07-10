@@ -233,6 +233,7 @@ def denoise(
     inverse,
     info, 
     guidance: float = 4.0,
+    start_timestep: float = None,
     # order
     order: int = 2,
     # callback save function
@@ -247,7 +248,11 @@ def denoise(
         inject_list = inject_list[::-1]
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
 
-    step_list = []
+    if start_timestep is not None:
+        if inverse:
+            timesteps = [t for t in timesteps if t >= start_timestep]
+        else:
+            timesteps = [t for t in timesteps if t <= start_timestep]
 
     if fastforward_steps is not None:
         # Fastforward img

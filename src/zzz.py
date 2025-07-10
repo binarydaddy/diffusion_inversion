@@ -1,55 +1,107 @@
+from flux_model_manager import FluxModelManager
 import torch
-from utils import plot_latent_spectrogram, equalize_frequency_magnitudes, normalize_latent, set_frequency_magnitudes_from_gaussian_noise, get_latent_statistics
-from inversion import initialize_models, run_model, render_latents_and_compute_psnr, latent_to_image
-from dataclasses import dataclass
+import os
+from PIL import Image
+import numpy as np
 
-@dataclass
-class SamplingOptions:
-    source_prompt: str
-    target_prompt: str
-    # prompt: str
-    width: int
-    height: int
-    num_steps: int
-    guidance: float
-    seed: int | None
+# Sanity Check
 
-path_to_data = '/home/swhong/workspace/RF-Solver-Edit/FLUX_Image_Edit/src/examples/edit-result/cat/diffusion_data_1.pt'
-path_to_image = '/home/swhong/workspace/RF-Solver-Edit/FLUX_Image_Edit/src/examples/source/cat.png'
+# Initialize with default settings
+manager = FluxModelManager(name="flux-dev", device="cuda", offload=False)
 
+manager.sanity_check()
 
-data = torch.load(path_to_data)
+gen_result = manager.generate(
+    prompt="A cat holding a sign that says hello world.", 
+    width=1024, 
+    height=1024, 
+    num_steps=50, 
+    guidance=3.5, 
+    seed=42, 
+    save_intermediates=True)
 
-inversion_latents = data['inversion_latents']
+timesteps = gen_result.timesteps
 
-ts = sorted(list(inversion_latents.keys()))
+inversion_starting_ts_idx_0 = manager.invert(
+    source_prompt="A cat holding a sign that says hello world.",
+    width=1024,
+    height=1024,
+    num_steps=50,
+    guidance=3.5,
+    start_latent=gen_result.final_latent,
+)
 
-last_ts = ts[-1]
+inversion_starting_ts_idx_5 = manager.invert_image_starting_from_timestep(
+    timestep_idx=5,
+    inversion_data=gen_result,
+    prompt="A cat holding a sign that says hello world."
+)
 
-original_latent = inversion_latents[last_ts]
-# plot_latent_spectrogram(latent, f'cat_ts_{last_ts}_spectrogram.png')
+inversion_starting_ts_idx_10 = manager.invert_image_starting_from_timestep(
+    timestep_idx=10,
+    inversion_data=gen_result,
+    prompt="A cat holding a sign that says hello world."
+)
 
-gaussian_noise = torch.randn_like(original_latent)
-# plot_latent_spectrogram(gaussian_noise, f'cat_ts_{last_ts}_gaussian_noise_spectrogram.png')
+inversion_starting_ts_idx_15 = manager.invert_image_starting_from_timestep(
+    timestep_idx=15,
+    inversion_data=gen_result,
+    prompt="A cat holding a sign that says hello world."
+)
 
-models = initialize_models(name='flux-dev', device='cuda', offload=True)
+inversion_starting_ts_idx_20 = manager.invert_image_starting_from_timestep(
+    timestep_idx=20,
+    inversion_data=gen_result,
+    prompt="A cat holding a sign that says hello world."
+)
 
-ae = models['ae']
+inversion_starting_ts_idx_25 = manager.invert_image_starting_from_timestep(
+    timestep_idx=25,
+    inversion_data=gen_result,
+    prompt="A cat holding a sign that says hello world."
+)
 
-opts = SamplingOptions(width=1024, height=1024, num_steps=30, guidance=1, seed=None, source_prompt="", target_prompt="")
+inversion_starting_ts_idx_30 = manager.invert_image_starting_from_timestep(
+    timestep_idx=30,
+    inversion_data=gen_result,
+    prompt="A cat holding a sign that says hello world."
+)
 
-for freq_ratio in [0.5, 0.6, 0.7, 0.8, 0.9, 0.91, 0.92, 0.93, 0.94, 0.95]:
-    latent = set_frequency_magnitudes_from_gaussian_noise(original_latent, frequency_ratio=freq_ratio)
+manager.save_inversion_results(
+    result=inversion_starting_ts_idx_0,
+    output_dir="output",
+    filename_prefix="inversion_starting_ts_idx_0"
+)
 
-    get_latent_statistics(latent)
-    # latent = set_frequency_magnitudes_from_gaussian_noise(latent)
-    normalized_latent = normalize_latent(latent)
+manager.save_inversion_results(
+    result=inversion_starting_ts_idx_5,
+    output_dir="output",
+    filename_prefix="inversion_starting_ts_idx_5"
+)
 
-    rendered_latent = latent_to_image(normalized_latent, opts, ae)
-    rendered_latent.save(f'examples/edit-result/cat/latents_mix_freqs_{freq_ratio}.png')
+manager.save_inversion_results(
+    result=inversion_starting_ts_idx_10,
+    output_dir="output",
+    filename_prefix="inversion_starting_ts_idx_10"
+)
+manager.save_inversion_results(
+    result=inversion_starting_ts_idx_15,
+    output_dir="output",
+    filename_prefix="inversion_starting_ts_idx_15"
+)
+manager.save_inversion_results(
+    result=inversion_starting_ts_idx_20,
+    output_dir="output",
+    filename_prefix="inversion_starting_ts_idx_20"
+)
+manager.save_inversion_results(
+    result=inversion_starting_ts_idx_25,
+    output_dir="output",
+    filename_prefix="inversion_starting_ts_idx_25"
+)
+manager.save_inversion_results(
+    result=inversion_starting_ts_idx_30,
+    output_dir="output",
+    filename_prefix="inversion_starting_ts_idx_30"
+)
 
-    plot_latent_spectrogram(normalized_latent, f'cat_ts_{last_ts}_normalized_spectrogram.png')
-
-    run_model(path_to_image, latent, models=models, output_filename=f'generated_from_latent_{freq_ratio}.png', device='cuda', name='flux-dev',
-               source_prompt='A cat holding hello world sign.', target_prompt='A cat holding hello world sign.', guidance=1, 
-               output_dir='examples/edit-result/cat', order=1, num_steps=30, offload=True)
