@@ -4,6 +4,8 @@ import numpy as np
 from PIL import Image
 import math
 
+
+
 def compute_psnr(img1, img2):
     # Convert PIL images to numpy arrays
     if isinstance(img1, Image.Image):
