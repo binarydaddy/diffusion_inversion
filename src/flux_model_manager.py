@@ -23,6 +23,18 @@ class GenerationResult:
     metadata: Dict[str, Any]
 
 
+@dataclass
+class InversionResult:
+    """Container for inversion results"""
+    final_latent: torch.Tensor
+    final_image: Image.Image
+    initial_image: torch.Tensor
+    intermediate_latents: Dict[float, torch.Tensor]
+    intermediate_scores: Dict[float, torch.Tensor]
+    timesteps: torch.Tensor
+    metadata: Dict[str, Any]
+
+
 class FluxModelManager:
     """
     Manager class for Flux diffusion models.
@@ -198,7 +210,7 @@ class FluxModelManager:
         save_intermediates: bool = True,
         feature_path: str = "feature",
         inject_step: int = 0
-    ) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    ) -> InversionResult:
         """
         Perform DDIM inversion on an image.
         
@@ -276,13 +288,17 @@ class FluxModelManager:
         if self.offload:
             self.model.cpu()
             torch.cuda.empty_cache()
-        
+                
+        # Decode final latent to image
+        final_image = self._decode_latent(inverted_latent, new_w, new_h)
+
         # Prepare intermediate data
         intermediate_data = {
             'intermediate_latents': intermediate_latents,
             'intermediate_scores': intermediate_scores,
             'timesteps': timesteps.cpu() if hasattr(timesteps, 'cpu') else timesteps,
             'final_latent': inverted_latent.cpu(),
+            'final_image': final_image,
             'encoded_image': encoded_image.cpu(),
             'metadata': {
                 'image_path': image_path,
@@ -297,7 +313,15 @@ class FluxModelManager:
             }
         }
         
-        return inverted_latent, intermediate_data
+        return InversionResult(
+            final_latent=inverted_latent.cpu(),
+            final_image=final_image,
+            initial_image=encoded_image.cpu(),
+            intermediate_latents=intermediate_latents,
+            intermediate_scores=intermediate_scores,
+            timesteps=timesteps.cpu() if hasattr(timesteps, 'cpu') else timesteps,
+            metadata=intermediate_data['metadata']
+        )
     
     @torch.inference_mode()
     def generate(
@@ -347,6 +371,9 @@ class FluxModelManager:
             starting_latent = self._prepare_empty_latent(height, width, device=self.torch_device)
         else:
             starting_latent = starting_latent.to(self.torch_device)
+        
+        if len(starting_latent.shape) == 3:
+            starting_latent = unpack(starting_latent, width, height)
         
         # Prepare inputs (no image needed for generation)
         inp = self._prepare_inputs(prompt, latent=starting_latent)
@@ -473,4 +500,43 @@ class FluxModelManager:
             if 'timesteps' in json_metadata and hasattr(json_metadata['timesteps'], 'tolist'):
                 json_metadata['timesteps'] = json_metadata['timesteps'].tolist()
             json.dump(json_metadata, f, indent=2)
-        print(f"Metadata saved to: {metadata_path}") 
+        print(f"Metadata saved to: {metadata_path}")
+    
+    def save_inversion_results(self, result: InversionResult, output_dir: str, filename_prefix: str = "inverted"):
+        """
+        Save inversion results including image and intermediate data.
+        
+        Args:
+            result: InversionResult object
+            output_dir: Directory to save outputs
+            filename_prefix: Prefix for output files
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Save final image
+        image_path = os.path.join(output_dir, f"{filename_prefix}_final.png")
+        result.final_image.save(image_path, quality=95, subsampling=0)
+        print(f"Final image saved to: {image_path}")
+        
+        # Save intermediate data
+        intermediate_data = {
+            'final_latent': result.final_latent,
+            'initial_image': result.initial_image,
+            'intermediate_latents': result.intermediate_latents,
+            'intermediate_scores': result.intermediate_scores,
+            'timesteps': result.timesteps,
+            'metadata': result.metadata
+        }
+        
+        data_path = os.path.join(output_dir, f"{filename_prefix}_data.pt")
+        self.save_intermediate_data(intermediate_data, data_path)
+        
+        # Save metadata as JSON for easy inspection
+        metadata_path = os.path.join(output_dir, f"{filename_prefix}_metadata.json")
+        with open(metadata_path, 'w') as f:
+            # Convert non-serializable items for JSON
+            json_metadata = result.metadata.copy()
+            if 'timesteps' in json_metadata and hasattr(json_metadata['timesteps'], 'tolist'):
+                json_metadata['timesteps'] = json_metadata['timesteps'].tolist()
+            json.dump(json_metadata, f, indent=2)
+        print(f"Metadata saved to: {metadata_path}")

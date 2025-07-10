@@ -12,7 +12,7 @@ def example_inversion(manager, image_path, source_prompt, output_dir):
     print("\n=== Image Inversion Example ===")
     
     # Perform inversion
-    inverted_latent, intermediate_data = manager.invert_image(
+    result = manager.invert_image(
         image_path=image_path,
         source_prompt=source_prompt,
         num_steps=50,
@@ -20,16 +20,17 @@ def example_inversion(manager, image_path, source_prompt, output_dir):
         save_intermediates=True
     )
     
-    # Save the intermediate data
-    manager.save_intermediate_data(
-        intermediate_data,
-        f"{output_dir}/inversion_data.pt"
+    # Save the inversion results
+    manager.save_inversion_results(
+        result,
+        output_dir,
+        "example_inversion"
     )
     
-    print(f"Inversion complete. Final latent shape: {inverted_latent.shape}")
-    print(f"Collected {len(intermediate_data['latents'])} intermediate latents")
+    print(f"Inversion complete. Final latent shape: {result.final_latent.shape}")
+    print(f"Collected {len(result.intermediate_latents)} intermediate latents")
     
-    return inverted_latent, intermediate_data
+    return result
 
 
 def example_generation(manager, prompt, output_dir, starting_latent=None):
@@ -62,7 +63,7 @@ def example_inversion_to_generation(manager, image_path, source_prompt, target_p
     print("\n=== Inversion-to-Generation Example ===")
     
     # First, invert the image
-    inverted_latent, inversion_data = manager.invert_image(
+    inversion_result = manager.invert_image(
         image_path=image_path,
         source_prompt=source_prompt,
         num_steps=50,
@@ -71,19 +72,20 @@ def example_inversion_to_generation(manager, image_path, source_prompt, target_p
     )
     
     # Save inversion data
-    manager.save_intermediate_data(
-        inversion_data,
-        f"{output_dir}/inversion_to_gen_inversion_data.pt"
+    manager.save_inversion_results(
+        inversion_result,
+        output_dir,
+        "inversion_to_gen_inversion"
     )
     
     # Then generate from the inverted latent with a new prompt
     result = manager.generate(
         prompt=target_prompt,
-        width=inversion_data['metadata']['width'],
-        height=inversion_data['metadata']['height'],
+        width=inversion_result.metadata['width'],
+        height=inversion_result.metadata['height'],
         num_steps=50,
         guidance=7.5,
-        starting_latent=inverted_latent,
+        starting_latent=inversion_result.final_latent,
         save_intermediates=True
     )
     

@@ -395,11 +395,15 @@ def denoise_starting_particular_step(
 
 
 def unpack(x: Tensor, height: int, width: int) -> Tensor:
+    
+    h = math.ceil(height / 16)
+    w = math.ceil(width / 16)
+
     return rearrange(
         x,
         "b (h w) (c ph pw) -> b c (h ph) (w pw)",
-        h=math.ceil(height / 16),
-        w=math.ceil(width / 16),
+        h=h,
+        w=w,
         ph=2,
         pw=2,
     )

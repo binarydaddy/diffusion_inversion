@@ -1,0 +1,1 @@
+python example_flux_manager.py --example inversion_to_generation --image_path ./output/sunset_generation_final.png --source_prompt "a beautiful sunset over mountains." --target_prompt "a beautiful sunset over mountains." --output_dir ./output
