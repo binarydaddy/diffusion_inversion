@@ -3,105 +3,68 @@ import torch
 import os
 from PIL import Image
 import numpy as np
+from glob import glob
 
 # Sanity Check
 
 # Initialize with default settings
 manager = FluxModelManager(name="flux-dev", device="cuda", offload=False)
 
-manager.sanity_check()
+seed = 42
 
-gen_result = manager.generate(
-    prompt="A cat holding a sign that says hello world.", 
-    width=1024, 
-    height=1024, 
-    num_steps=50, 
-    guidance=3.5, 
-    seed=42, 
-    save_intermediates=True)
-
-timesteps = gen_result.timesteps
-
-inversion_starting_ts_idx_0 = manager.invert(
-    source_prompt="A cat holding a sign that says hello world.",
+generation_result = manager.generate(
+    prompt="A cat holding a sign that says hello world.",
     width=1024,
     height=1024,
     num_steps=50,
     guidance=3.5,
-    start_latent=gen_result.final_latent,
+    seed=seed,
 )
 
-inversion_starting_ts_idx_5 = manager.invert_image_starting_from_timestep(
-    timestep_idx=5,
-    inversion_data=gen_result,
-    prompt="A cat holding a sign that says hello world."
+directory = "output"
+manager.save_generation_result(
+    result=generation_result,
+    output_dir=directory,
+    filename_prefix="generation"
 )
 
-inversion_starting_ts_idx_10 = manager.invert_image_starting_from_timestep(
-    timestep_idx=10,
-    inversion_data=gen_result,
-    prompt="A cat holding a sign that says hello world."
-)
+original_image = f"{directory}/generation_final.png"
 
-inversion_starting_ts_idx_15 = manager.invert_image_starting_from_timestep(
-    timestep_idx=15,
-    inversion_data=gen_result,
-    prompt="A cat holding a sign that says hello world."
-)
+# Inversion test
+inversion_timestep_idx = [0, 5, 10, 15, 20, 25, 30]
 
-inversion_starting_ts_idx_20 = manager.invert_image_starting_from_timestep(
-    timestep_idx=20,
-    inversion_data=gen_result,
-    prompt="A cat holding a sign that says hello world."
-)
+for idx in inversion_timestep_idx:
+    inversion_result = manager.invert_image_starting_from_timestep(
+        timestep_idx=idx,
+        inversion_data=generation_result,
+        prompt="A cat holding a sign that says hello world.",
+    )
 
-inversion_starting_ts_idx_25 = manager.invert_image_starting_from_timestep(
-    timestep_idx=25,
-    inversion_data=gen_result,
-    prompt="A cat holding a sign that says hello world."
-)
+    manager.save_inversion_results(
+        result=inversion_result,
+        output_dir=os.path.join(directory, "inverted"),
+        filename_prefix=f"inversion_ts_{idx}"
+    )
 
-inversion_starting_ts_idx_30 = manager.invert_image_starting_from_timestep(
-    timestep_idx=30,
-    inversion_data=gen_result,
-    prompt="A cat holding a sign that says hello world."
-)
+# Generation test
 
-manager.save_inversion_results(
-    result=inversion_starting_ts_idx_0,
-    output_dir="output",
-    filename_prefix="inversion_starting_ts_idx_0"
-)
+for f in glob(os.path.join(directory, "inverted", "*.pt")):
+    
+    fname = f.split("/")[-1].split(".")[0]
+    data = torch.load(f)
+    final_latent = data["final_latent"]
 
-manager.save_inversion_results(
-    result=inversion_starting_ts_idx_5,
-    output_dir="output",
-    filename_prefix="inversion_starting_ts_idx_5"
-)
+    generation_result = manager.generate(
+        prompt="A cat holding a sign that says hello world.",
+        width=1024,
+        height=1024,
+        num_steps=50,
+        guidance=3.5,
+        start_latent=final_latent,
+    )
 
-manager.save_inversion_results(
-    result=inversion_starting_ts_idx_10,
-    output_dir="output",
-    filename_prefix="inversion_starting_ts_idx_10"
-)
-manager.save_inversion_results(
-    result=inversion_starting_ts_idx_15,
-    output_dir="output",
-    filename_prefix="inversion_starting_ts_idx_15"
-)
-manager.save_inversion_results(
-    result=inversion_starting_ts_idx_20,
-    output_dir="output",
-    filename_prefix="inversion_starting_ts_idx_20"
-)
-manager.save_inversion_results(
-    result=inversion_starting_ts_idx_25,
-    output_dir="output",
-    filename_prefix="inversion_starting_ts_idx_25"
-)
-manager.save_inversion_results(
-    result=inversion_starting_ts_idx_30,
-    output_dir="output",
-    filename_prefix="inversion_starting_ts_idx_30"
-)
-
+    manager.save_generation_result(
+        result=generation_result,
+        output_dir=os.path.join(directory, "generated"),
+        filename_prefix=fname
+    )

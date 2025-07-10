@@ -1,6 +1,55 @@
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+from PIL import Image
+import math
+
+def compute_psnr(img1, img2):
+    # Convert PIL images to numpy arrays
+    if isinstance(img1, Image.Image):
+        img1 = np.array(img1)
+    if isinstance(img2, Image.Image):
+        img2 = np.array(img2)
+    
+    # Ensure same dimensions
+    if img1.shape != img2.shape:
+        # Resize img2 to match img1
+        img2_pil = Image.fromarray(img2)
+        img2_pil = img2_pil.resize((img1.shape[1], img1.shape[0]), Image.LANCZOS)
+        img2 = np.array(img2_pil)
+    
+    # Convert to float and normalize to [0, 1]
+    img1 = img1.astype(np.float64) / 255.0
+    img2 = img2.astype(np.float64) / 255.0
+    
+    # Compute MSE
+    mse = np.mean((img1 - img2) ** 2)
+    
+    # Avoid division by zero
+    if mse == 0:
+        return float('inf')
+    
+    # Compute PSNR
+    psnr = 20 * np.log10(1.0 / np.sqrt(mse))
+    return psnr
+
+def multivariate_gaussian_log_likelihood(x):
+    """
+    Compute the log-likelihood of x under a multivariate Gaussian with mean=0 and covariance=I.
+    This is more numerically stable than computing likelihood directly.
+    
+    Args:
+        x: Tensor of shape (..., d) where d is the dimensionality
+        
+    Returns:
+        log_likelihood: Tensor of shape (...) containing log-likelihood values
+    """
+    d = x.shape[-1]
+    squared_norm = torch.sum(x**2, dim=-1)
+    log_normalization = -0.5 * d * math.log(2 * math.pi)
+    log_likelihood = log_normalization - 0.5 * squared_norm
+    
+    return log_likelihood
 
 def normalize_latent(latent):
     original_dtype = latent.dtype
