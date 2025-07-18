@@ -9,3 +9,4 @@ validation_result
 *.json
 *.parquet
 checkpoint*
+logs*

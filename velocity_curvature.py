@@ -4,6 +4,7 @@ import glob
 from torch import Tensor
 import math
 from einops import rearrange
+from src.utils import plot_multiple_metrics_scatterplot, plot_tuple_list_scatterplot
 
 p = "/data/inversion_data/0711_image_data/004027_data.pt"
 
@@ -35,6 +36,7 @@ def compute_velocity_curvature(path_to_data):
     data = torch.load(path_to_data, weights_only=False)
 
     intermediate_latents = data["intermediate_latents"]
+    intermediate_scores = data["intermediate_scores"]
     final_latent = data["final_latent"]
     source_latent = data["initial_latent"]
     source_latent = pack(source_latent, 1024, 1024)
@@ -50,10 +52,9 @@ def compute_velocity_curvature(path_to_data):
 
     for t in ts:
 
-        diff = torch.mean((aligned_intermediate_latents[t] - final_latent) ** 2)
-
         # velocity
-        velocity = (intermediate_latents[t] - final_latent) / (t)
+
+        velocity = intermediate_scores[t]
 
         # full_velocity
         full_velocity = (source_latent - final_latent) / (t)
@@ -64,18 +65,24 @@ def compute_velocity_curvature(path_to_data):
         cosine_similarity = F.cosine_similarity(velocity, full_velocity, dim=0)
         mse_diff = torch.mean((velocity - full_velocity) ** 2)
 
+        magnitude_diff = torch.mean((torch.norm(velocity) - torch.norm(full_velocity))**2)
+
         result[t] = {
             "cosine_similarity": cosine_similarity,
             "mse_diff": mse_diff,
+            "magnitude_diff": magnitude_diff,
         }
 
     return result
 
-def multiprocess_compute_velocity_curvature(path_to_data=None):
-    full_filelist = glob.glob("/data/inversion_data/0711_image_data/*.pt")
+def multiprocess_compute_velocity_curvature(path_to_data=None, n_files=100):
+    import random
+    full_filelists = glob.glob("/data/inversion_data/0712_image_data/*.pt")
+
+    full_filelist = random.sample(full_filelists, n_files)
     
     import multiprocessing as mp
-    with mp.Pool(processes=100) as pool:
+    with mp.Pool(processes=10) as pool:
         results = pool.map(compute_velocity_curvature, full_filelist)
     
     final_dict = {}
@@ -83,19 +90,20 @@ def multiprocess_compute_velocity_curvature(path_to_data=None):
     # Combine all results into a single dictionary
     for result_dict in results:
         for timestep, metrics in result_dict.items():
-            if timestep not in final_dict:
-                final_dict[timestep] = {
-                    "cosine_similarity": [],
-                    "mse_diff": []
-                }
-            final_dict[timestep]["cosine_similarity"].append(metrics["cosine_similarity"].item())
-            final_dict[timestep]["mse_diff"].append(metrics["mse_diff"].item())
-    
+            for metric_name, metric_value in metrics.items():
+                if metric_name not in final_dict:
+                    final_dict[metric_name] = []
+                final_dict[metric_name].append((timestep,metric_value.item()))
+            
     return final_dict
 
 if __name__ == "__main__":
-    path_to_data = "/data/inversion_data/0711_image_data"
-    results = multiprocess_compute_velocity_curvature()
+    results = multiprocess_compute_velocity_curvature(n_files=1000)
     print(f"Processed {len(results)} files")
 
-    torch.save(results, "velocity_curvature_results.pt")
+    plot_tuple_list_scatterplot(results['cosine_similarity'], output_path=".", filename="cosine_similarity.png")
+    plot_tuple_list_scatterplot(results['mse_diff'], output_path=".", filename="mse_diff.png")
+    plot_tuple_list_scatterplot(results['magnitude_diff'], output_path=".", filename="magnitude_diff.png")
+    print("Done")
+
+    # plot_multiple_metrics_scatterplot(results, output_path=".", filename="velocity_curvature_results.png")

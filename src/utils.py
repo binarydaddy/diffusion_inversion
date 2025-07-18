@@ -382,7 +382,7 @@ def plot_dict_scatterplot(data_dict, output_path=None, title="Scatterplot", xlab
 
 
 def plot_tuple_list_scatterplot(data_list, output_path=None, filename=None,title="Scatterplot", xlabel="X", ylabel="Y", 
-                         figsize=(10, 6), color='blue', alpha=0.7, marker='o', markersize=50):
+                         figsize=(10, 6), color='blue', alpha=0.7, marker='o', markersize=5):
     """
     Create a scatterplot from a dictionary where keys are x-values and values are y-values.
     
@@ -434,6 +434,8 @@ def plot_tuple_list_scatterplot(data_list, output_path=None, filename=None,title
         output_path = os.path.join(output_path, filename)
     
     plt.savefig(output_path, dpi=300, bbox_inches='tight')
+
+    print(f"Figure saved to: {output_path}")
     
     return fig, ax
 
@@ -503,7 +505,7 @@ def plot_multiple_metrics_scatterplot(metrics_dict, output_path=None, filename=N
                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     plt.tight_layout()
-    
+
     # Save or display the plot
     if output_path and filename:
         full_path = os.path.join(output_path, filename)
