@@ -1,0 +1,1 @@
+accelerate launch flux_train.py --output_dir flux_inversion_lora_target_0.3_512_long --target_timestep 0.3 --train_batch_size 1 --num_train_epochs 100 --checkpointing_steps 1000 --rank 512 --lora_alpha 512 --learning_rate 1e-5

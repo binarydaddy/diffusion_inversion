@@ -1,0 +1,1 @@
+accelerate launch flux_train_random_access.py --output_dir flux_train_random_access_0.5 --max_target_timestep 0.5 --train_batch_size 1 --num_train_epochs 10 --checkpointing_steps 1000 --rank 512 --lora_alpha 512 --learning_rate 1e-5

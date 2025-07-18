@@ -1,0 +1,11 @@
+*.txt
+!requirements.txt
+!diffusionDB_enhanced_360k.txt
+__pycache__
+validation_data
+validation_result
+*.pt
+*.png
+*.json
+*.parquet
+checkpoint*

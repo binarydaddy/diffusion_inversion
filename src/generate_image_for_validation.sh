@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python generate_image_data.py --prompt_path examples/validation_captions/validation_no_train.txt --output_dir /home/swhong/workspace/diffusion_inversion/src/validation_no_train --device cuda --chunk_idx 0
